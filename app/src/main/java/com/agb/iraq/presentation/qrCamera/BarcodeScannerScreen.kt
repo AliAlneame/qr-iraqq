@@ -46,7 +46,7 @@ fun BarcodeScannerScreen(
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val previewView = remember { PreviewView(context) }
 
-    // ظ„ظ…ظ†ط¹ ط§ظ„طھظƒط±ط§ط±: ظ„ط§ طھط¹ط§ظ„ط¬ ط£ظƒط«ط± ظ…ظ† ظ†طھظٹط¬ط© ظˆط§ط­ط¯ط©
+    // لمنع التكرار: لا تعالج أكثر من نتيجة واحدة
     val handledResult = remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -73,7 +73,7 @@ fun BarcodeScannerScreen(
                                 processImageForCode(
                                     imageProxy = imageProxy,
                                     barcodeScanner = barcodeScanner,
-                                    // ط¥ظ† ظ„ظ… ظ†ط¬ط¯ ط¨ط§ط±ظƒظˆط¯طŒ ظ†ط­ط§ظˆظ„ OCR
+                                    // إن لم نجد باركود، نحاول OCR للأرقام
                                     textFallback = { proxy, onSuccess, onError ->
                                         processImageForNumbers(
                                             imageProxy = proxy,
@@ -86,20 +86,30 @@ fun BarcodeScannerScreen(
                                         if (handledResult.value) return@processImageForCode
                                         handledResult.value = true
 
+                                        // (اختياري) تحقّق أن الكود ضمن عناصر عرض السعر الحالية
                                         val items = viewModel.quotationsItems.value?.data?.items ?: emptyList()
-                                        val match = items.any { it.product?.sku.equals(code, ignoreCase = true) }
-
-                                        if (match) {
-                                            viewModel.markAsScanned(code)
-                                            Toast.makeText(context, "Matched: $code", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Not found: $code", Toast.LENGTH_SHORT).show()
+                                        val existsInQuotation = items.any {
+                                            it.product?.sku.equals(code, ignoreCase = true) ||
+                                                    it.product_id?.toString().equals(code, ignoreCase = true)
                                         }
-                                        navController.popBackStack()
+
+                                        if (!existsInQuotation) {
+                                            Toast.makeText(context, "غير موجود في العرض: $code", Toast.LENGTH_SHORT).show()
+                                            handledResult.value = false // اسمح بمحاولة أخرى
+                                        } else {
+                                            // >>> هذا هو المكان المطلوب <<<
+                                            // مرّر النتيجة للشاشة السابقة عبر savedStateHandle
+                                            navController.previousBackStackEntry
+                                                ?.savedStateHandle
+                                                ?.set("scannedSku", code.trim())
+
+                                            // ارجع للشاشة السابقة
+                                            navController.navigateUp()
+                                        }
                                     },
                                     onErrorScan = { error ->
                                         if (!handledResult.value) {
-                                            Toast.makeText(context, "Error: $error", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "خطأ: $error", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 )
@@ -136,7 +146,7 @@ fun BarcodeScannerScreen(
                 )
             }
             Text(
-                text = "Align the QR or Number within the box",
+                text = "ضع QR أو الرقم داخل الإطار",
                 color = Color.White,
                 fontSize = 16.sp,
                 modifier = Modifier
@@ -169,21 +179,16 @@ private fun processImageForCode(
                 onSuccessScan(code.trim())
                 imageProxy.close()
             } else {
-                // ظ„ط§ ظٹظˆط¬ط¯ ط¨ط§ط±ظƒظˆط¯: ط¬ط±ظ‘ط¨ OCR ظ„ظ„ط£ط±ظ‚ط§ظ…
+                // لا يوجد باركود: جرّب OCR للأرقام
                 textFallback(imageProxy, onSuccessScan, onErrorScan)
             }
         }
-        .addOnFailureListener { e ->
-            // ظپظٹ ط­ط§ظ„ ظپط´ظ„ ط§ظ„ط¨ط§ط±ظƒظˆط¯طŒ ظ†ط¬ط±ط¨ OCR
+        .addOnFailureListener {
+            // في حال فشل الباركود: نجرّب OCR
             textFallback(imageProxy, onSuccessScan, onErrorScan)
         }
 }
 
-/**
- * OCR ظ„ط§ط³طھط®ط±ط§ط¬ ط£ط±ظ‚ط§ظ… ظپظ‚ط· ظ…ظ† ط§ظ„ظ†طµ.
- * - ظٹط¯ط¹ظ… ط£ط±ظ‚ط§ظ… ط¹ط±ط¨ظٹط©-ظ‡ظ†ط¯ظٹط© ظ ظ،ظ¢ظ£ظ¤ظ¥ظ¦ظ§ظ¨ظ© ط¨طھط­ظˆظٹظ„ظ‡ط§ ط¥ظ„ظ‰ 0-9
- * - ظٹظ„طھظ‚ط· ط£ط·ظˆظ„ ظ…طھطھط§ظ„ظٹط© ط£ط±ظ‚ط§ظ… ظƒط£ظپط¶ظ„ طھط®ظ…ظٹظ† (ظٹظ…ظƒظ† طھط¹ط¯ظٹظ„ظ‡ ط­ط³ط¨ ط­ط§ط¬طھظƒ)
- */
 @OptIn(ExperimentalGetImage::class)
 private fun processImageForNumbers(
     imageProxy: ImageProxy,
@@ -203,7 +208,6 @@ private fun processImageForNumbers(
             val fullText = result.text ?: ""
             val normalized = normalizeDigits(fullText)
 
-            // ط§ظ„طھظ‚ط· ط¬ظ…ظٹط¹ ط§ظ„ظ…طھطھط§ظ„ظٹط§طھ ط§ظ„ط±ظ‚ظ…ظٹط©
             val pattern = Pattern.compile("\\d+")
             val matcher = pattern.matcher(normalized)
 
@@ -218,48 +222,29 @@ private fun processImageForNumbers(
             if (!best.isNullOrBlank()) {
                 onSuccessScan(best!!)
             } else {
-                onErrorScan("No numbers detected")
+                onErrorScan("لم يتم العثور على أرقام")
             }
         }
         .addOnFailureListener { e ->
-            onErrorScan(e.message ?: "OCR failed")
+            onErrorScan(e.message ?: "فشل التعرف النصي")
         }
         .addOnCompleteListener {
             imageProxy.close()
         }
 }
 
-/**
- * ظٹط­ظˆظ‘ظ„ ط§ظ„ط£ط±ظ‚ط§ظ… ط§ظ„ط¹ط±ط¨ظٹط©-ط§ظ„ظ‡ظ†ط¯ظٹط© ط¥ظ„ظ‰ 0-9
- * ظ ظ،ظ¢ظ£ظ¤ظ¥ظ¦ظ§ظ¨ظ© â†’ 0123456789
- */
+/** يحوّل الأرقام العربية/الفارسية إلى 0-9 العادية */
 private fun normalizeDigits(input: String): String {
     if (input.isEmpty()) return input
     val sb = StringBuilder(input.length)
     for (ch in input) {
         val mapped = when (ch) {
-            // Arabic-Indic (U+0660..U+0669)
-            '٠' -> '0'
-            '١' -> '1'
-            '٢' -> '2'
-            '٣' -> '3'
-            '٤' -> '4'
-            '٥' -> '5'
-            '٦' -> '6'
-            '٧' -> '7'
-            '٨' -> '8'
-            '٩' -> '9'
-            // Extended Arabic-Indic / Persian (U+06F0..U+06F9)
-            '۰' -> '0'
-            '۱' -> '1'
-            '۲' -> '2'
-            '۳' -> '3'
-            '۴' -> '4'
-            '۵' -> '5'
-            '۶' -> '6'
-            '۷' -> '7'
-            '۸' -> '8'
-            '۹' -> '9'
+            // Arabic-Indic
+            '٠' -> '0'; '١' -> '1'; '٢' -> '2'; '٣' -> '3'; '٤' -> '4'
+            '٥' -> '5'; '٦' -> '6'; '٧' -> '7'; '٨' -> '8'; '٩' -> '9'
+            // Persian
+            '۰' -> '0'; '۱' -> '1'; '۲' -> '2'; '۳' -> '3'; '۴' -> '4'
+            '۵' -> '5'; '۶' -> '6'; '۷' -> '7'; '۸' -> '8'; '۹' -> '9'
             else -> ch
         }
         sb.append(mapped)

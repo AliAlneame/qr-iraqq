@@ -6,17 +6,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -25,40 +15,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-
-import androidx.lifecycle.observe
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.agb.iraq.data.remote.model.QuotationItem
@@ -75,40 +41,64 @@ fun QuotationsScreen(
     LaunchedEffect(Unit) { viewModel.setQuotationsItems() }
 
     val quotationsItems by viewModel.quotationsItems.collectAsState()
-    // نستخدم الـ Set الموجود فقط للعرض إن كان فيه SKU معلّم أصلاً من منطقك الحالي
-    val scannedSkus by viewModel.scannedSkus.collectAsState()
-
-    val snackbarHostState = remember { SnackbarHostState() }
+    val scannedSkus by viewModel.scannedSkus.collectAsState() // منطقك القديم (إن وُجد)
     val items = quotationsItems?.data?.items ?: emptyList()
 
-    // عدّاد محلّي لكل SKU: لا علاقة له بالـ ViewModel
+    // عدّاد محلّي لكل SKU مع منع التجاوز
     val localCounts = remember { mutableStateMapOf<String, Int>() }
 
-    // استلام نتيجة المسح من شاشة الكاميرا عبر savedStateHandle (واجهة فقط)
+    // استلام قيمة الـSKU من شاشة الكاميرا
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(backStackEntry) {
+    LaunchedEffect(backStackEntry, items) {
         backStackEntry?.savedStateHandle
             ?.getLiveData<String>("scannedSku")
-            ?.observe(lifecycleOwner) { sku ->
-                if (!sku.isNullOrBlank()) {
-                    val key = sku.trim()
-                    val current = localCounts[key] ?: 0
-                    localCounts[key] = current + 1
-                    val req = items.find { it.product?.sku == key || it.product_id?.toString() == key }?.quantity ?: 1
-                    Toast.makeText(context, "تم المسح: ${localCounts[key] ?: 0} / $req", Toast.LENGTH_SHORT).show()
+            ?.observeForever { skuRaw ->
+                val sku = skuRaw?.trim().orEmpty()
+                if (sku.isBlank()) return@observeForever
 
-                    // لا نغير الـ ViewModel؛ نكتفي بالإكمال محليًا
-                    if (isAllSatisfiedLocal(items, localCounts, scannedSkus)) {
-                        Toast.makeText(context, "تم مسح جميع العناصر ✅", Toast.LENGTH_SHORT).show()
-                        viewModel.confirmQuotation() // نؤكد مباشرة
-                    }
+                // العنصر المطابق
+                val item = items.firstOrNull {
+                    it.product?.sku.equals(sku, true) || it.product_id?.toString().equals(sku, true)
+                }
+
+                if (item == null) {
+                    Toast.makeText(context, "الرمز غير موجود في هذا العرض: $sku", Toast.LENGTH_SHORT).show()
+                    return@observeForever
+                }
+
+                val required = (item.quantity ?: 1).coerceAtLeast(1)
+                val serverDone = scannedSkus.contains(sku)
+
+                if (serverDone) {
+                    // معلم مسبقًا من السيرفر/الفيوموديل: اعتبره مكتمل ولا تسمح بزيادة
+                    localCounts[sku] = required
+                    Toast.makeText(context, "العنصر مكتمل مسبقًا", Toast.LENGTH_SHORT).show()
+                    return@observeForever
+                }
+
+                val current = localCounts[sku] ?: 0
+                if (current >= required) {
+                    // منع تجاوز المطلوب
+                    localCounts[sku] = required
+                    Toast.makeText(context, "وصلت للحد المطلوب: $required/$required", Toast.LENGTH_SHORT).show()
+                } else {
+                    val next = (current + 1).coerceAtMost(required)
+                    localCounts[sku] = next
+                    Toast.makeText(context, "تم المسح: $next / $required", Toast.LENGTH_SHORT).show()
                 }
             }
     }
 
-    // تقدّم عام: العناصر المكتملة محليًا أو مسبقًا (من الـSet)
-    val satisfiedCount = items.count { isItemSatisfiedLocal(it, localCounts, scannedSkus) }
+    // حساب التقدّم: عنصر مكتمل إذا (serverDone) أو (min(local,required) == required)
+    fun isItemSatisfiedLocal(item: QuotationItem): Boolean {
+        val sku = item.product?.sku ?: item.product_id?.toString() ?: return false
+        val required = (item.quantity ?: 1).coerceAtLeast(1)
+        val serverDone = scannedSkus.contains(sku)
+        val local = (localCounts[sku] ?: 0).coerceAtMost(required)
+        return serverDone || local >= required
+    }
+
+    val satisfiedCount = items.count { isItemSatisfiedLocal(it) }
     val totalCount = items.size
     val progress = if (totalCount == 0) 0f else satisfiedCount.toFloat() / totalCount.toFloat()
     val animatedProgress by animateFloatAsState(
@@ -119,7 +109,7 @@ fun QuotationsScreen(
 
     val bg = Brush.linearGradient(listOf(Color(0xFF0F172A), Color(0xFF0B1020)))
 
-    // بعد التأكيد (كما عندك)
+    // بعد التأكيد من الـViewModel (نفس منطقك)
     LaunchedEffect(Unit) {
         viewModel.confirmResult.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
@@ -133,13 +123,42 @@ fun QuotationsScreen(
                 title = { Text("تفاصيل عرض السعر", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
+
+
                         Icon(Icons.Rounded.ArrowBack, contentDescription = "رجوع")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors()
+                }
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        bottomBar = {
+            // زر تأكيد لا يفعّل إلا إذا جميع العناصر مكتملة
+            val allDone = totalCount > 0 && satisfiedCount == totalCount
+            Surface(tonalElevation = 6.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "مكتمل: $satisfiedCount / $totalCount",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = { viewModel.confirmQuotation() },
+                        enabled = allDone,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("تأكيد", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -164,16 +183,16 @@ fun QuotationsScreen(
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 22.dp),
+                    contentPadding = PaddingValues(bottom = 90.dp), // مساحة للزر السفلي
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     items(items) { item ->
                         val sku = item.product?.sku ?: item.product_id?.toString() ?: "-"
                         val required = (item.quantity ?: 1).coerceAtLeast(1)
-                        // لو الـViewModel معلّم الـSKU مسبقًا، نعتبره مكتمل في العرض
                         val serverDone = scannedSkus.contains(sku)
-                        val localScanned = localCounts[sku] ?: 0
+                        val localScanned = (localCounts[sku] ?: 0).coerceAtMost(required)
+
                         val scannedForUi = if (serverDone) required else localScanned
                         val isSatisfied = serverDone || scannedForUi >= required
 
@@ -183,7 +202,7 @@ fun QuotationsScreen(
                             required = required,
                             isSatisfied = isSatisfied,
                             onClick = {
-                                // افتح الكاميرا للمسح المتكرر (واجهة فقط)
+                                // افتح شاشة الكاميرا للمسح المتكرر
                                 navController.navigate(Screens.CameraScreen.route)
                             }
                         )
@@ -193,24 +212,6 @@ fun QuotationsScreen(
         }
     }
 }
-
-private fun isItemSatisfiedLocal(
-    item: QuotationItem,
-    localCounts: Map<String, Int>,
-    scannedSkus: Set<String>
-): Boolean {
-    val sku = item.product?.sku ?: item.product_id?.toString() ?: return false
-    val required = (item.quantity ?: 1).coerceAtLeast(1)
-    val serverDone = scannedSkus.contains(sku)
-    val local = localCounts[sku] ?: 0
-    return serverDone || local >= required
-}
-
-private fun isAllSatisfiedLocal(
-    items: List<QuotationItem>,
-    localCounts: Map<String, Int>,
-    scannedSkus: Set<String>
-): Boolean = items.isNotEmpty() && items.all { isItemSatisfiedLocal(it, localCounts, scannedSkus) }
 
 @Composable
 private fun ProgressHeader(scanned: Int, total: Int, progress: Float) {
@@ -240,7 +241,7 @@ private fun ProgressHeader(scanned: Int, total: Int, progress: Float) {
                 ) {
                     Icon(Icons.Rounded.CheckCircle, null, tint = Color(0xFF065F46))
                 }
-                Spacer(Modifier.size(10.dp))
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = "التقدّم",
@@ -252,7 +253,7 @@ private fun ProgressHeader(scanned: Int, total: Int, progress: Float) {
                         color = Color(0xFF94A3B8)
                     )
                 }
-                FilledTonalButton(onClick = { /* اختياري */ }, enabled = total > 0) {
+                FilledTonalButton(onClick = { /* اختياري: بدء المسح */ }, enabled = total > 0) {
                     Icon(Icons.Rounded.Search, contentDescription = null)
                     Spacer(Modifier.size(6.dp))
                     Text("ابدأ المسح")
@@ -331,7 +332,10 @@ private fun QuotationLineCard(
             Divider(color = Color.White.copy(alpha = 0.10f))
             Spacer(Modifier.height(8.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 ScanStateChip(isSatisfied)
             }
         }
@@ -348,7 +352,7 @@ private fun QuotationLineCard(
 }
 
 @Composable private fun QuantityPill(scanned: Int, required: Int) {
-    val label = "$scanned / $required"
+    val label = "${scanned.coerceAtMost(required)} / $required"
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
