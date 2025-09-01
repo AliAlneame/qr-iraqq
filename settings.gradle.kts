@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "City Search App"
+rootProject.name = "iraq"
 include(":app")
  

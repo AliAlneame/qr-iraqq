@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.agb.citysearchapp"
+    namespace = "com.agb.iraq"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.agb.laithsurvey"
+        applicationId = "com.agb.iraq"
         minSdk = 21
         targetSdk = 34
         versionCode = 1

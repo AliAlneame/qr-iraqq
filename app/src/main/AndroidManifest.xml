@@ -7,7 +7,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="true" />
 
     <application
-        android:name="com.agb.laithsurvey.ScanQrApplication"
+        android:name="com.agb.iraq.QrIraqApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -15,14 +15,14 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.CitySearchApp"
+        android:theme="@style/Theme.QrIraq"
         tools:targetApi="31">
 
         <activity
-            android:name="com.agb.laithsurvey.MainActivity"
+            android:name="com.agb.iraq.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.CitySearchApp"
+            android:theme="@style/Theme.QrIraq"
             android:screenOrientation="portrait"
             tools:ignore="DiscouragedApi">
             <intent-filter>
