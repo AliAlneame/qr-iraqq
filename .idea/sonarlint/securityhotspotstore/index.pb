@@ -1,0 +1,25 @@
+
+]
+-.idea/sonarlint/securityhotspotstore/index.pb,8\8\88a9255124c95bdc913197c120a8d560edc59c8e
+S
+#.idea/sonarlint/issuestore/index.pb,9\f\9fe84ebb15faf917b7def6236dba604453cc61e0
+g
+7app/src/main/java/com/agb/citysearchapp/MainActivity.kt,f\5\f52c060354291efa971986a6364c7d389f927432
+P
+ app/src/main/AndroidManifest.xml,8\c\8c55c3ccc257e5907959013f99656e4c8ec3903e
+s
+Capp/src/main/java/com/agb/citysearchapp/data/model/CityDataModel.kt,3\4\341cb3b375d4b080cd6c3f31cd0146ffea27079e
+z
+Japp/src/main/java/com/agb/citysearchapp/data/model/CoordinatesDataModel.kt,5\5\55a5cd9ba009549c9c8a4e3a0554548811b54b1c
+x
+Happ/src/main/java/com/agb/citysearchapp/data/source/ICitiesDataSource.kt,2\a\2a2873597df2458e592600b5df6ab3bb73400433
+@
+build.gradle.kts,d\b\dbcff70658daf80b53ce624f6adcaa529df5ed8d
+~
+Napp/src/main/java/com/agb/citysearchapp/presentation/cities/CitiesViewModel.kt,f\0\f0bc4fb7097b3989f0c9ec9b7ed827045333a668
+z
+Japp/src/main/java/com/agb/citysearchapp/presentation/cities/CitiesRoute.kt,1\3\135ec5b1df49bc21b717b507beabd0e03172f090
+}
+Mapp/src/main/java/com/agb/citysearchapp/presentation/navigation/AppNavHost.kt,1\4\14082c1d15d5042f0fae3594b8aef299cce8308f
+Å
+Qapp/src/main/java/com/agb/citysearchapp/presentation/navigation/CitiesNavGraph.kt,e\d\edd5a1d9d792125783f5cb3c96602ebec2e1db17
