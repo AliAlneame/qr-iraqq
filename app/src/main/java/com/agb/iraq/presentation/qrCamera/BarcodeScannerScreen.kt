@@ -1,4 +1,5 @@
-﻿package com.agb.iraq.presentation.qrCamera
+﻿
+package com.agb.iraq.presentation.qrCamera
 
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -15,8 +16,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +46,7 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.regex.Pattern
 
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BarcodeScannerScreen(
     viewModel: HomeViewModel,
@@ -49,110 +60,123 @@ fun BarcodeScannerScreen(
     // لمنع التكرار: لا تعالج أكثر من نتيجة واحدة
     val handledResult = remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        AndroidView(
-            factory = { previewView },
-            modifier = Modifier.fillMaxSize()
-        ) { view ->
-            cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
-
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(view.surfaceProvider)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("مسح QR") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigateUp() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "رجوع")
+                    }
                 }
+            )
+        }
+    ) { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier.fillMaxSize()
+            ) { view ->
+                cameraProviderFuture.addListener({
+                    val cameraProvider = cameraProviderFuture.get()
 
-                val barcodeScanner = BarcodeScanning.getClient()
-                val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also {
-                        it.setAnalyzer(ContextCompat.getMainExecutor(context)) { imageProxy ->
-                            if (!handledResult.value) {
-                                processImageForCode(
-                                    imageProxy = imageProxy,
-                                    barcodeScanner = barcodeScanner,
-                                    // إن لم نجد باركود، نحاول OCR للأرقام
-                                    textFallback = { proxy, onSuccess, onError ->
-                                        processImageForNumbers(
-                                            imageProxy = proxy,
-                                            onSuccessScan = onSuccess,
-                                            onErrorScan = onError,
-                                            recognizer = textRecognizer
-                                        )
-                                    },
-                                    onSuccessScan = { code ->
-                                        if (handledResult.value) return@processImageForCode
-                                        handledResult.value = true
-
-                                        // (اختياري) تحقّق أن الكود ضمن عناصر عرض السعر الحالية
-                                        val items = viewModel.quotationsItems.value?.data?.items ?: emptyList()
-                                        val existsInQuotation = items.any {
-                                            it.product?.sku.equals(code, ignoreCase = true) ||
-                                                    it.product_id?.toString().equals(code, ignoreCase = true)
-                                        }
-
-                                        if (!existsInQuotation) {
-                                            Toast.makeText(context, "غير موجود في العرض: $code", Toast.LENGTH_SHORT).show()
-                                            handledResult.value = false // اسمح بمحاولة أخرى
-                                        } else {
-                                            // >>> هذا هو المكان المطلوب <<<
-                                            // مرّر النتيجة للشاشة السابقة عبر savedStateHandle
-                                            navController.previousBackStackEntry
-                                                ?.savedStateHandle
-                                                ?.set("scannedSku", code.trim())
-
-                                            // ارجع للشاشة السابقة
-                                            navController.navigateUp()
-                                        }
-                                    },
-                                    onErrorScan = { error ->
-                                        if (!handledResult.value) {
-                                            Toast.makeText(context, "خطأ: $error", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-                            } else {
-                                imageProxy.close()
-                            }
-                        }
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(view.surfaceProvider)
                     }
 
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner, cameraSelector, preview, imageAnalysis
-                )
-            }, ContextCompat.getMainExecutor(context))
-        }
+                    val barcodeScanner = BarcodeScanning.getClient()
+                    val textRecognizer =
+                        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-        // Overlay UI
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.4f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(modifier = Modifier.size(250.dp)) {
-                val cornerRadius = 16.dp.toPx()
-                val strokeWidth = 6.dp.toPx()
-                drawRoundRect(
+                    val imageAnalysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also {
+                            it.setAnalyzer(ContextCompat.getMainExecutor(context)) { imageProxy ->
+                                if (!handledResult.value) {
+                                    processImageForCode(
+                                        imageProxy = imageProxy,
+                                        barcodeScanner = barcodeScanner,
+                                        // إن لم نجد باركود، نحاول OCR للأرقام
+                                        textFallback = { proxy, onSuccess, onError ->
+                                            processImageForNumbers(
+                                                imageProxy = proxy,
+                                                onSuccessScan = onSuccess,
+                                                onErrorScan = onError,
+                                                recognizer = textRecognizer
+                                            )
+                                        },
+                                        onSuccessScan = { code ->
+                                            if (handledResult.value) return@processImageForCode
+                                            handledResult.value = true
+
+                                            // (اختياري) تحقّق أن الكود ضمن عناصر عرض السعر الحالية
+                                            val items = viewModel.quotationsItems.value?.data?.items ?: emptyList()
+                                            val existsInQuotation = items.any {
+                                                it.product?.sku.equals(code, ignoreCase = true) ||
+                                                        it.product_id?.toString().equals(code, ignoreCase = true)
+                                            }
+
+                                            if (!existsInQuotation) {
+                                                Toast.makeText(context, "غير موجود في العرض: $code", Toast.LENGTH_SHORT).show()
+                                                handledResult.value = false // اسمح بمحاولة أخرى
+                                            } else {
+                                                // مرّر النتيجة للشاشة السابقة عبر savedStateHandle
+                                                navController.previousBackStackEntry
+                                                    ?.savedStateHandle
+                                                    ?.set("scannedSku", code.trim())
+
+                                                // ارجع للشاشة السابقة
+                                                navController.navigateUp()
+                                            }
+                                        },
+                                        onErrorScan = { error ->
+                                            if (!handledResult.value) {
+                                                Toast.makeText(context, "خطأ: $error", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    imageProxy.close()
+                                }
+                            }
+                        }
+
+                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner, cameraSelector, preview, imageAnalysis
+                    )
+                }, ContextCompat.getMainExecutor(context))
+            }
+
+            // Overlay UI
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(250.dp)) {
+                    val cornerRadius = 16.dp.toPx()
+                    val strokeWidth = 6.dp.toPx()
+                    drawRoundRect(
+                        color = Color.White,
+                        topLeft = androidx.compose.ui.geometry.Offset.Zero,
+                        size = size,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius, cornerRadius),
+                        style = Stroke(width = strokeWidth)
+                    )
+                }
+                Text(
+                    text = "ضع QR أو الرقم داخل الإطار",
                     color = Color.White,
-                    topLeft = androidx.compose.ui.geometry.Offset.Zero,
-                    size = size,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius, cornerRadius),
-                    style = Stroke(width = strokeWidth)
+                    fontSize = 16.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp)
                 )
             }
-            Text(
-                text = "ضع QR أو الرقم داخل الإطار",
-                color = Color.White,
-                fontSize = 16.sp,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 100.dp)
-            )
         }
     }
 }

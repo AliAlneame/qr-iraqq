@@ -14,87 +14,137 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Observer
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.agb.iraq.data.remote.model.QuotationItem
-import com.agb.iraq.presentation.navigation.Screens
 import com.agb.iraq.presentation.ui.viewmodel.HomeViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+// CameraX + ML Kit
+import androidx.annotation.OptIn
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.util.ArrayList
+import java.util.regex.Pattern
+
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuotationsScreen(
     navController: NavController,
     viewModel: HomeViewModel
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    // تحميل بيانات عرض السعر
     LaunchedEffect(Unit) { viewModel.setQuotationsItems() }
 
     val quotationsItems by viewModel.quotationsItems.collectAsState()
-    val scannedSkus by viewModel.scannedSkus.collectAsState() // منطقك القديم (إن وُجد)
+    val scannedSkus by viewModel.scannedSkus.collectAsState()
     val items = quotationsItems?.data?.items ?: emptyList()
 
-    // عدّاد محلّي لكل SKU مع منع التجاوز
-    val localCounts = remember { mutableStateMapOf<String, Int>() }
+    // خريطة حالة قابلة للملاحظة + محفوظة (Saver آمن للـ Bundle)
+    val localCounts = rememberCountStateMap()
 
-    // استلام قيمة الـSKU من شاشة الكاميرا
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    LaunchedEffect(backStackEntry, items) {
-        backStackEntry?.savedStateHandle
-            ?.getLiveData<String>("scannedSku")
-            ?.observeForever { skuRaw ->
-                val sku = skuRaw?.trim().orEmpty()
-                if (sku.isBlank()) return@observeForever
-
-                // العنصر المطابق
-                val item = items.firstOrNull {
-                    it.product?.sku.equals(sku, true) || it.product_id?.toString().equals(sku, true)
-                }
-
-                if (item == null) {
-                    Toast.makeText(context, "الرمز غير موجود في هذا العرض: $sku", Toast.LENGTH_SHORT).show()
-                    return@observeForever
-                }
-
-                val required = (item.quantity ?: 1).coerceAtLeast(1)
-                val serverDone = scannedSkus.contains(sku)
-
-                if (serverDone) {
-                    // معلم مسبقًا من السيرفر/الفيوموديل: اعتبره مكتمل ولا تسمح بزيادة
-                    localCounts[sku] = required
-                    Toast.makeText(context, "العنصر مكتمل مسبقًا", Toast.LENGTH_SHORT).show()
-                    return@observeForever
-                }
-
-                val current = localCounts[sku] ?: 0
-                if (current >= required) {
-                    // منع تجاوز المطلوب
-                    localCounts[sku] = required
-                    Toast.makeText(context, "وصلت للحد المطلوب: $required/$required", Toast.LENGTH_SHORT).show()
-                } else {
-                    val next = (current + 1).coerceAtMost(required)
-                    localCounts[sku] = next
-                    Toast.makeText(context, "تم المسح: $next / $required", Toast.LENGTH_SHORT).show()
-                }
-            }
+    // مفاتيح موحّدة لكل عنصر
+    fun countKey(item: QuotationItem): String {
+        return when {
+            item.id != null -> "ID:${item.id}"
+            !item.product?.sku.isNullOrBlank() -> "SKU:${item.product?.sku!!.trim().lowercase()}"
+            item.product_id != null -> "PID:${item.product_id}"
+            else -> "ROW:${item.hashCode()}"
+        }
     }
 
-    // حساب التقدّم: عنصر مكتمل إذا (serverDone) أو (min(local,required) == required)
+    // البحث عن العنصر بواسطة كود ممسوح
+    fun findItemByScannedCode(codeRaw: String): QuotationItem? {
+        val code = codeRaw.trim()
+        if (code.isBlank()) return null
+        return items.firstOrNull { it.product?.sku?.equals(code, ignoreCase = true) == true }
+            ?: items.firstOrNull { it.product_id?.toString()?.equals(code, ignoreCase = true) == true }
+    }
+
+    // توافق مع savedStateHandle لو أرسِلت مسحة من شاشة قديمة
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    DisposableEffect(backStackEntry) {
+        val handle = backStackEntry?.savedStateHandle
+        val live = handle?.getLiveData<String>("scannedSku")
+        val obs = Observer<String> { skuRaw ->
+            handleScannedCode(
+                code = skuRaw ?: return@Observer,
+                items = items,
+                scannedSkus = scannedSkus,
+                localCounts = localCounts,
+                findItemByScannedCode = ::findItemByScannedCode,
+                countKey = ::countKey,
+                onToast = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+            )
+        }
+        live?.observeForever(obs)
+        onDispose { live?.removeObserver(obs) }
+    }
+
+    // احتساب الاكتمال
     fun isItemSatisfiedLocal(item: QuotationItem): Boolean {
-        val sku = item.product?.sku ?: item.product_id?.toString() ?: return false
+        val key = countKey(item)
         val required = (item.quantity ?: 1).coerceAtLeast(1)
-        val serverDone = scannedSkus.contains(sku)
-        val local = (localCounts[sku] ?: 0).coerceAtMost(required)
+        val serverKey = item.product?.sku ?: item.product_id?.toString() ?: ""
+        val serverDone = scannedSkus.contains(serverKey)
+        val local = (localCounts[key] ?: 0).coerceAtMost(required)
         return serverDone || local >= required
     }
 
@@ -109,7 +159,7 @@ fun QuotationsScreen(
 
     val bg = Brush.linearGradient(listOf(Color(0xFF0F172A), Color(0xFF0B1020)))
 
-    // بعد التأكيد من الـViewModel (نفس منطقك)
+    // رسالة تأكيد من الـ ViewModel
     LaunchedEffect(Unit) {
         viewModel.confirmResult.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
@@ -117,27 +167,28 @@ fun QuotationsScreen(
         }
     }
 
+    // فتح/إغلاق الماسح المضمّن
+    var scanning by rememberSaveable { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("تفاصيل عرض السعر", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
-
-
                         Icon(Icons.Rounded.ArrowBack, contentDescription = "رجوع")
                     }
                 }
             )
         },
         bottomBar = {
-            // زر تأكيد لا يفعّل إلا إذا جميع العناصر مكتملة
             val allDone = totalCount > 0 && satisfiedCount == totalCount
             Surface(tonalElevation = 6.dp) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 16.dp, vertical = 16.dp) // رفع المسافة
+                        .navigationBarsPadding(),                      // يرفع الزر فوق شريط النظام
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -150,8 +201,8 @@ fun QuotationsScreen(
                         onClick = { viewModel.confirmQuotation() },
                         enabled = allDone,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(start = 12.dp)
+                            .clip(RoundedCornerShape(16.dp)),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Text("تأكيد", style = MaterialTheme.typography.titleMedium)
@@ -176,23 +227,24 @@ fun QuotationsScreen(
                 ProgressHeader(
                     scanned = satisfiedCount,
                     total = totalCount,
-                    progress = animatedProgress
+                    progress = animatedProgress,
+                    onStartScan = { if (items.isNotEmpty()) scanning = true }
                 )
 
                 Spacer(Modifier.height(10.dp))
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 90.dp), // مساحة للزر السفلي
+                    contentPadding = PaddingValues(bottom = 90.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     items(items) { item ->
-                        val sku = item.product?.sku ?: item.product_id?.toString() ?: "-"
+                        val key = countKey(item)
                         val required = (item.quantity ?: 1).coerceAtLeast(1)
-                        val serverDone = scannedSkus.contains(sku)
-                        val localScanned = (localCounts[sku] ?: 0).coerceAtMost(required)
-
+                        val serverKey = item.product?.sku ?: item.product_id?.toString() ?: ""
+                        val serverDone = scannedSkus.contains(serverKey)
+                        val localScanned = (localCounts[key] ?: 0).coerceAtMost(required)
                         val scannedForUi = if (serverDone) required else localScanned
                         val isSatisfied = serverDone || scannedForUi >= required
 
@@ -201,20 +253,91 @@ fun QuotationsScreen(
                             scanned = scannedForUi,
                             required = required,
                             isSatisfied = isSatisfied,
-                            onClick = {
-                                // افتح شاشة الكاميرا للمسح المتكرر
-                                navController.navigate(Screens.CameraScreen.route)
-                            }
+                            onClick = { scanning = true }
                         )
                     }
                 }
+            }
+
+            if (scanning) {
+                InlineScannerOverlay(
+                    onClose = { scanning = false },
+                    onCodeScanned = { code ->
+                        handleScannedCode(
+                            code = code,
+                            items = items,
+                            scannedSkus = scannedSkus,
+                            localCounts = localCounts,
+                            findItemByScannedCode = ::findItemByScannedCode,
+                            countKey = ::countKey,
+                            onToast = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+                        )
+                    }
+                )
             }
         }
     }
 }
 
+/** خريطة حالة محفوظة وقابلة للملاحظة (Saver يُرجع ArrayList<Pair<String,Int>>) */
 @Composable
-private fun ProgressHeader(scanned: Int, total: Int, progress: Float) {
+private fun rememberCountStateMap(): SnapshotStateMap<String, Int> {
+    return rememberSaveable(
+        saver = Saver<SnapshotStateMap<String, Int>, ArrayList<Pair<String, Int>>>(
+            save = { stateMap ->
+                ArrayList(stateMap.entries.map { it.key to it.value })
+            },
+            restore = { list ->
+                mutableStateMapOf<String, Int>().apply {
+                    list.forEach { put(it.first, it.second) }
+                }
+            }
+        )
+    ) {
+        mutableStateMapOf()
+    }
+}
+
+/** معالجة الكود الممسوح وتحديث العداد */
+private fun handleScannedCode(
+    code: String,
+    items: List<QuotationItem>,
+    scannedSkus: Set<String>,
+    localCounts: SnapshotStateMap<String, Int>,
+    findItemByScannedCode: (String) -> QuotationItem?,
+    countKey: (QuotationItem) -> String,
+    onToast: (String) -> Unit
+) {
+    val item = findItemByScannedCode(code)
+    if (item == null) {
+        onToast("الرمز غير موجود في هذا العرض: $code")
+        return
+    }
+    val key = countKey(item)
+    val required = (item.quantity ?: 1).coerceAtLeast(1)
+    val serverKey = item.product?.sku ?: item.product_id?.toString() ?: ""
+    val serverDone = scannedSkus.contains(serverKey)
+
+    if (serverDone) {
+        localCounts[key] = required
+        onToast("العنصر مكتمل مسبقًا")
+        return
+    }
+
+    val current = localCounts[key] ?: 0
+    val next = (current + 1).coerceAtMost(required)
+    localCounts[key] = next
+    onToast("تم المسح: $next / $required")
+}
+
+/** رأس التقدّم */
+@Composable
+private fun ProgressHeader(
+    scanned: Int,
+    total: Int,
+    progress: Float,
+    onStartScan: () -> Unit
+) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -253,7 +376,7 @@ private fun ProgressHeader(scanned: Int, total: Int, progress: Float) {
                         color = Color(0xFF94A3B8)
                     )
                 }
-                FilledTonalButton(onClick = { /* اختياري: بدء المسح */ }, enabled = total > 0) {
+                FilledTonalButton(onClick = { if (total > 0) onStartScan() }, enabled = total > 0) {
                     Icon(Icons.Rounded.Search, contentDescription = null)
                     Spacer(Modifier.size(6.dp))
                     Text("ابدأ المسح")
@@ -381,4 +504,205 @@ private fun QuotationLineCard(
             .border(1.dp, fg.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .padding(horizontal = 10.dp, vertical = 6.dp)
     )
+}
+
+/* =========================
+   ماسح مضمّن داخل الشاشة
+   ========================= */
+
+ @Composable
+private fun InlineScannerOverlay(
+    onClose: () -> Unit,
+    onCodeScanned: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    val previewView = remember { PreviewView(context) }
+
+    var lastValue by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastTime by rememberSaveable { mutableStateOf(0L) }
+    val minGapMs = 700L
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.6f))
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Rounded.Close, contentDescription = "إغلاق", tint = Color.White)
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("وضع المسح المتواصل", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        }
+
+        AndroidView(
+            factory = { previewView },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 48.dp, bottom = 80.dp)
+        ) { view ->
+            cameraProviderFuture.addListener({
+                val cameraProvider = cameraProviderFuture.get()
+
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(view.surfaceProvider)
+                }
+
+                val barcodeScanner = BarcodeScanning.getClient()
+                val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .also {
+                        it.setAnalyzer(ContextCompat.getMainExecutor(context)) { imageProxy ->
+                            processImageForCode(
+                                imageProxy = imageProxy,
+                                barcodeScanner = barcodeScanner,
+                                textFallback = { proxy, onSuccess, onError ->
+                                    processImageForNumbers(
+                                        imageProxy = proxy,
+                                        recognizer = textRecognizer,
+                                        onSuccessScan = onSuccess,
+                                        onErrorScan = onError
+                                    )
+                                },
+                                onSuccessScan = { raw ->
+                                    val now = System.currentTimeMillis()
+                                    val value = raw.trim()
+                                    val tooSoonSame =
+                                        (lastValue != null && lastValue == value && (now - lastTime) < minGapMs)
+                                    if (!tooSoonSame && value.isNotEmpty()) {
+                                        lastValue = value
+                                        lastTime = now
+                                        onCodeScanned(value)
+                                    }
+                                },
+                                onErrorScan = { /* تجاهل لتقليل الإزعاج */ }
+                            )
+                        }
+                    }
+
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner, cameraSelector, preview, imageAnalysis
+                    )
+                } catch (e: Exception) {
+                    Toast.makeText(context, "فشل تشغيل الكاميرا: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }, ContextCompat.getMainExecutor(context))
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(260.dp)) {
+                val cornerRadius = 16.dp.toPx()
+                val strokeWidth = 6.dp.toPx()
+                drawRoundRect(
+                    color = Color.White,
+                    topLeft = androidx.compose.ui.geometry.Offset.Zero,
+                    size = size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius, cornerRadius),
+                    style = Stroke(width = strokeWidth)
+                )
+            }
+            Text(
+                text = "ضع QR أو الرقم داخل الإطار\n(المسح مستمر)",
+                color = Color.White,
+                fontSize = 16.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 90.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalGetImage::class)
+private fun processImageForCode(
+    imageProxy: ImageProxy,
+    barcodeScanner: BarcodeScanner,
+    textFallback: (ImageProxy, (String) -> Unit, (String) -> Unit) -> Unit,
+    onSuccessScan: (code: String) -> Unit,
+    onErrorScan: (error: String) -> Unit
+) {
+    val mediaImage = imageProxy.image
+    if (mediaImage == null) {
+        imageProxy.close(); return
+    }
+    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+    barcodeScanner.process(image)
+        .addOnSuccessListener { barcodes ->
+            val code = barcodes.firstOrNull()?.rawValue
+            if (!code.isNullOrBlank()) {
+                onSuccessScan(code.trim())
+                imageProxy.close()
+            } else {
+                textFallback(imageProxy, onSuccessScan, onErrorScan)
+            }
+        }
+        .addOnFailureListener {
+            textFallback(imageProxy, onSuccessScan, onErrorScan)
+        }
+}
+
+@OptIn(ExperimentalGetImage::class)
+private fun processImageForNumbers(
+    imageProxy: ImageProxy,
+    recognizer: com.google.mlkit.vision.text.TextRecognizer,
+    onSuccessScan: (code: String) -> Unit,
+    onErrorScan: (error: String) -> Unit
+) {
+    val mediaImage = imageProxy.image
+    if (mediaImage == null) {
+        imageProxy.close(); return
+    }
+    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+    recognizer.process(image)
+        .addOnSuccessListener { result ->
+            val fullText = result.text ?: ""
+            val normalized = normalizeDigits(fullText)
+            val pattern = Pattern.compile("\\d+")
+            val matcher = pattern.matcher(normalized)
+            var best: String? = null
+            while (matcher.find()) {
+                val candidate = matcher.group()
+                if (best == null || candidate.length > best.length) best = candidate
+            }
+            if (!best.isNullOrBlank()) onSuccessScan(best!!) else onErrorScan("لم يتم العثور على أرقام")
+        }
+        .addOnFailureListener { e -> onErrorScan(e.message ?: "فشل التعرف النصي") }
+        .addOnCompleteListener { imageProxy.close() }
+}
+
+/** يحوّل الأرقام العربية/الفارسية إلى 0-9 العادية */
+private fun normalizeDigits(input: String): String {
+    if (input.isEmpty()) return input
+    val sb = StringBuilder(input.length)
+    for (ch in input) {
+        val mapped = when (ch) {
+            '٠' -> '0'; '١' -> '1'; '٢' -> '2'; '٣' -> '3'; '٤' -> '4'
+            '٥' -> '5'; '٦' -> '6'; '٧' -> '7'; '٨' -> '8'; '٩' -> '9'
+            '۰' -> '0'; '۱' -> '1'; '۲' -> '2'; '۳' -> '3'; '۴' -> '4'
+            '۵' -> '5'; '۶' -> '6'; '۷' -> '7'; '۸' -> '8'; '۹' -> '9'
+            else -> ch
+        }
+        sb.append(mapped)
+    }
+    return sb.toString().trim().replace("\\s+".toRegex(), " ")
 }
