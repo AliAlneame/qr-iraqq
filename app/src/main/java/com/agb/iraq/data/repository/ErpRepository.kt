@@ -8,6 +8,8 @@ import com.agb.iraq.data.paging.QuotationPagingSource
 import com.agb.iraq.data.remote.api.QuotationApi
 import com.agb.iraq.data.remote.model.BaseResponse
 import com.agb.iraq.data.remote.model.ConfirmResponse
+import com.agb.iraq.data.remote.model.ProductData
+import com.agb.iraq.data.remote.model.ProductResponse
 import com.agb.iraq.data.remote.model.QuotationDetailResponse
 import com.agb.iraq.data.remote.model.QuotationItem
 import retrofit2.Response
@@ -51,6 +53,20 @@ class ErpRepository @Inject constructor(
         fields: Map<String, String>
     ): ConfirmResponse {
         return api.confirmPurchases(quotationId,fields)
+    }
+
+    override fun updateQuotation(
+        quotationId: Int,
+        customerId: Int,
+        warehouseId: Int,
+        quotationDate: String,
+        items: Map<String, String>
+    ): ConfirmResponse {
+        return api.updateQuotation(quotationId,customerId,warehouseId,quotationDate,items)
+    }
+
+    override suspend fun getProducts(sku: String, warehouseId: Int): List<ProductData> {
+        return api.getProducts(sku, warehouseId).data ?: emptyList()
     }
 
     private suspend fun <T> wrapResponse(

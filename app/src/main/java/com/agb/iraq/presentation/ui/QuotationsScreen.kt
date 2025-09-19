@@ -91,11 +91,16 @@ fun QuotationsScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     // تحميل بيانات عرض السعر
-    LaunchedEffect(Unit) { viewModel.setQuotationsItems() }
+    LaunchedEffect(Unit) {
+        viewModel.setQuotationsItems()
+    }
 
     val quotationsItems by viewModel.quotationsItems.collectAsState()
+    val products by viewModel.products.collectAsState()
     val scannedSkus by viewModel.scannedSkus.collectAsState()
-    val items = quotationsItems?.data?.items ?: emptyList()
+    var items by remember { mutableStateOf(quotationsItems?.data?.items ?: emptyList()) }
+
+    var currentItemSku by remember { mutableStateOf("") }
 
     // خريطة حالة قابلة للملاحظة + محفوظة (Saver آمن للـ Bundle)
     val localCounts = rememberCountStateMap()
@@ -111,7 +116,24 @@ fun QuotationsScreen(
     }
 
     // البحث عن العنصر بواسطة كود ممسوح
-    fun findItemByScannedCode(codeRaw: String): QuotationItem? {
+    fun findItemByScannedCode(codeRaw: String, currentItemSku: String): QuotationItem? {
+        val updatedItem = products.find { it.sku == codeRaw }
+
+        if (updatedItem != null) {
+            items = items.map { item ->
+                if (item.product?.sku == currentItemSku) {
+                    item.copy(
+                        product = item.product.copy(
+                            name = updatedItem.name,
+                            sku = updatedItem.sku
+                        )
+                    )
+                } else {
+                    item
+                }
+            }
+        }
+
         val code = codeRaw.trim()
         if (code.isBlank()) return null
         return items.firstOrNull { it.product?.sku?.equals(code, ignoreCase = true) == true }
@@ -129,7 +151,9 @@ fun QuotationsScreen(
                 items = items,
                 scannedSkus = scannedSkus,
                 localCounts = localCounts,
-                findItemByScannedCode = ::findItemByScannedCode,
+                findItemByScannedCode = {
+                    findItemByScannedCode(it, currentItemSku)
+                },
                 countKey = ::countKey,
                 onToast = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
             )
@@ -253,7 +277,11 @@ fun QuotationsScreen(
                             scanned = scannedForUi,
                             required = required,
                             isSatisfied = isSatisfied,
-                            onClick = { scanning = true }
+                            onClick = {
+                                viewModel.fetchProducts(item.product?.sku ?: "", item.warehouse_id ?: 9)
+                                currentItemSku = item.product?.sku ?: ""
+                                scanning = true
+                            }
                         )
                     }
                 }
@@ -268,7 +296,9 @@ fun QuotationsScreen(
                             items = items,
                             scannedSkus = scannedSkus,
                             localCounts = localCounts,
-                            findItemByScannedCode = ::findItemByScannedCode,
+                            findItemByScannedCode = {
+                                findItemByScannedCode(it,currentItemSku)
+                            },
                             countKey = ::countKey,
                             onToast = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
                         )

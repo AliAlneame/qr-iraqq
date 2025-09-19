@@ -2,7 +2,9 @@
 
 import com.agb.iraq.data.remote.model.ConfirmResponse
 import com.agb.iraq.data.remote.model.PagingResponse
+import com.agb.iraq.data.remote.model.ProductResponse
 import com.agb.iraq.data.remote.model.QuotationDetailResponse
+import retrofit2.http.Field
 import retrofit2.http.FieldMap
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
@@ -45,5 +47,21 @@ interface QuotationApi {
         @Path("id") quotationId: Int,
         @FieldMap fields: Map<String, String>
     ): ConfirmResponse
+
+    @FormUrlEncoded
+    @POST("quotations/{id}/update")
+    fun updateQuotation(
+        @Path("id") quotationId: Int,
+        @Field("customer_id") customerId: Int,
+        @Field("warehouse_id") warehouseId: Int,
+        @Field("quotation_date") quotationDate: String,
+        @FieldMap items: Map<String, String>
+    ): ConfirmResponse
+
+    @GET("products")
+    suspend fun getProducts(
+        @Query("sku") sku: String,
+        @Query("warehouse_id") warehouseId: Int
+    ): ProductResponse
 
 }

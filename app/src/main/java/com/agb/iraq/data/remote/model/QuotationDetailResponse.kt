@@ -68,6 +68,7 @@ data class QuotationItem(
     val id: Int? = null,
     val quotation_id: Int? = null,
     val product_id: Int? = null,
+    val warehouse_id: Int? = null,
     val quantity: Int? = null,
     val tax: String? = null,
     val discount: Int? = null,
@@ -75,7 +76,8 @@ data class QuotationItem(
     val description: String? = null,
     val created_at: String? = null,
     val updated_at: String? = null,
-    val product: Product? = null
+    val product: Product? = null,
+    val customer: Customer? = null,
 )
 
 data class Product(

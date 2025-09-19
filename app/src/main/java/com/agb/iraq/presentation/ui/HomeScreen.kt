@@ -257,6 +257,12 @@ private fun QuotationCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    Text(
+                        text = "Customer: ${item.customer?.name ?: "-"}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     val sku = item.product?.sku ?: item.product_id?.toString() ?: "-"
                     AnimatedVisibility(visible = sku.isNotBlank(), enter = fadeIn(), exit = fadeOut()) {
                         Text(

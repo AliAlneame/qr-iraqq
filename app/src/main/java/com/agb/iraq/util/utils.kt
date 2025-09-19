@@ -15,3 +15,20 @@ fun buildConfirmFields(items: List<QuotationItem>): Map<String, String> {
     }
     return fields
 }
+
+fun buildQuotationFields(items: List<QuotationItem>): Map<String, String> {
+    val fields = mutableMapOf<String, String>()
+
+    items.forEachIndexed { index, item ->
+        item.id?.let { fields["items[$index][id]"] = it.toString() }
+        item.product_id?.let { fields["items[$index][item]"] = it.toString() }
+        fields["items[$index][price]"] = item.price ?: "0"
+        fields["items[$index][quantity]"] = item.quantity?.toString() ?: "0"
+        fields["items[$index][tax]"] = item.tax ?: "0"
+        fields["items[$index][discount]"] = item.discount?.toString() ?: "0"
+        fields["items[$index][description]"] = item.description ?: ""
+    }
+
+    return fields
+}
+

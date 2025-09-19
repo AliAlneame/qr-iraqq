@@ -6,16 +6,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import com.agb.iraq.data.remote.model.ProductData
 import com.agb.iraq.data.remote.model.QuotationDetailResponse
 import com.agb.iraq.data.remote.model.QuotationItem
 import com.agb.iraq.data.repository.ErpRepository
 import com.agb.iraq.presentation.ui.model.ErpType
 import com.agb.iraq.util.buildConfirmFields
+import com.agb.iraq.util.buildQuotationFields
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -39,7 +42,7 @@ class HomeViewModel @Inject constructor(
             .flatMapLatest { type ->
                 when (type) {
                     ErpType.QUOTATIONS -> repo.getQuotationsPager().flow
-                    ErpType.PURCHASES  -> repo.getPurchasesPager().flow
+                    ErpType.PURCHASES -> repo.getPurchasesPager().flow
                 }
             }
             .cachedIn(viewModelScope)
@@ -55,21 +58,45 @@ class HomeViewModel @Inject constructor(
     private val _confirmResult = MutableSharedFlow<String>()
     val confirmResult = _confirmResult.asSharedFlow()
 
+    private val _products = MutableStateFlow<List<ProductData>>(emptyList())
+    val products: StateFlow<List<ProductData>> = _products
+
+    private val _scannedCode = MutableStateFlow<String?>(null)
+    val scannedCode: StateFlow<String?> = _scannedCode
+
+    fun fetchProducts(sku: String, warehouseId: Int) {
+        viewModelScope.launch {
+            try {
+                _products.value = repo.getProducts(sku, warehouseId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun confirmQuotation() {
         viewModelScope.launch {
             val quotation = _quotationsItems.value ?: return@launch
-            val fields = quotation.data?.items?.let { buildConfirmFields(it) }
-
             try {
-                val response = when(_erpType.value) {
-                    ErpType.QUOTATIONS -> repo.confirmQuotation(
-                        quotation.data?.id ?: 0,
-                        fields ?: emptyMap()
-                    )
-                    ErpType.PURCHASES -> repo.confirmPurchases(
-                        quotation.data?.id ?: 0,
-                        fields ?: emptyMap()
-                    )
+                val response = when (_erpType.value) {
+                    ErpType.QUOTATIONS -> {
+                        val fields = quotation.data?.items?.let { buildQuotationFields(it) }
+                        repo.updateQuotation(
+                            quotationId = quotation.data?.quotation_id ?: 0,
+                            warehouseId = quotation.data?.warehouse_id ?: 9,
+                            customerId = quotation.data?.customer_id ?: 4,
+                            quotationDate = quotation.data?.quotation_date ?: "",
+                            items = fields ?: emptyMap()
+                        )
+                    }
+
+                    ErpType.PURCHASES -> {
+                        val fields = quotation.data?.items?.let { buildConfirmFields(it) }
+                        repo.confirmPurchases(
+                            quotation.data?.id ?: 0,
+                            fields ?: emptyMap()
+                        )
+                    }
                 }
                 _confirmResult.emit(response.message ?: "Unknown")
             } catch (e: Exception) {
@@ -90,11 +117,11 @@ class HomeViewModel @Inject constructor(
     fun setErpType(type: ErpType) {
         try {
             _erpType.value = type
-            when(type) {
+            when (type) {
                 ErpType.QUOTATIONS -> setQuotations()
                 ErpType.PURCHASES -> setPurchases()
             }
-        } catch (e :Exception) {
+        } catch (e: Exception) {
             Log.e("setErpType: ", e.message.toString())
         }
     }
@@ -122,12 +149,12 @@ class HomeViewModel @Inject constructor(
     fun setQuotationsItems() {
         try {
             viewModelScope.launch {
-                _quotationsItems.value = when(_erpType.value) {
+                _quotationsItems.value = when (_erpType.value) {
                     ErpType.QUOTATIONS -> repo.getQuotationById(currentQuotationId.value ?: 0)
                     ErpType.PURCHASES -> repo.getPurchasesById(currentQuotationId.value ?: 0)
                 }
             }
-        } catch (e : Exception) {
+        } catch (e: Exception) {
             Log.e("setQuotationsItems: ", e.message.toString())
         }
     }
