@@ -118,8 +118,7 @@ fun QuotationsScreen(
     // البحث عن العنصر بواسطة كود ممسوح
     fun findItemByScannedCode(codeRaw: String, currentItemSku: String): QuotationItem? {
         val updatedItem = products.find { it.sku == codeRaw }
-
-        if (updatedItem != null) {
+        return if (updatedItem != null) {
             items = items.map { item ->
                 if (item.product?.sku == currentItemSku) {
                     item.copy(
@@ -132,13 +131,18 @@ fun QuotationsScreen(
                     item
                 }
             }
+            items.find { it.product?.sku == currentItemSku }
+        } else {
+            null
         }
-
-        val code = codeRaw.trim()
-        if (code.isBlank()) return null
-        return items.firstOrNull { it.product?.sku?.equals(code, ignoreCase = true) == true }
-            ?: items.firstOrNull { it.product_id?.toString()?.equals(code, ignoreCase = true) == true }
     }
+//        }
+
+//        val code = codeRaw.trim()
+//        if (code.isBlank()) return null
+//        return items.firstOrNull { it.product?.sku?.equals(code, ignoreCase = true) == true }
+//            ?: items.firstOrNull { it.product_id?.toString()?.equals(code, ignoreCase = true) == true }
+//    }
 
     // توافق مع savedStateHandle لو أرسِلت مسحة من شاشة قديمة
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -278,7 +282,10 @@ fun QuotationsScreen(
                             required = required,
                             isSatisfied = isSatisfied,
                             onClick = {
-                                viewModel.fetchProducts(item.product?.sku ?: "", item.warehouse_id ?: 9)
+                                viewModel.fetchProducts(
+                                    item.product?.sku ?: "",
+                                    item.warehouse_id ?: 9
+                                )
                                 currentItemSku = item.product?.sku ?: ""
                                 scanning = true
                             }
@@ -297,10 +304,12 @@ fun QuotationsScreen(
                             scannedSkus = scannedSkus,
                             localCounts = localCounts,
                             findItemByScannedCode = {
-                                findItemByScannedCode(it,currentItemSku)
+                                findItemByScannedCode(it, currentItemSku)
                             },
                             countKey = ::countKey,
-                            onToast = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+                            onToast = { msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
                         )
                     }
                 )
@@ -406,7 +415,10 @@ private fun ProgressHeader(
                         color = Color(0xFF94A3B8)
                     )
                 }
-                FilledTonalButton(onClick = { if (total > 0) onStartScan() }, enabled = total > 0) {
+                FilledTonalButton(
+                    onClick = { if (total > 0) onStartScan() },
+                    enabled = total > 0
+                ) {
                     Icon(Icons.Rounded.Search, contentDescription = null)
                     Spacer(Modifier.size(6.dp))
                     Text("ابدأ المسح")
@@ -495,7 +507,8 @@ private fun QuotationLineCard(
     }
 }
 
-@Composable private fun StatusDot(done: Boolean) {
+@Composable
+private fun StatusDot(done: Boolean) {
     Box(
         modifier = Modifier
             .size(12.dp)
@@ -504,7 +517,8 @@ private fun QuotationLineCard(
     )
 }
 
-@Composable private fun QuantityPill(scanned: Int, required: Int) {
+@Composable
+private fun QuantityPill(scanned: Int, required: Int) {
     val label = "${scanned.coerceAtMost(required)} / $required"
     Box(
         modifier = Modifier
@@ -521,7 +535,8 @@ private fun QuotationLineCard(
     ) { Text("الكمية $label", color = Color(0xFF06122B), fontWeight = FontWeight.SemiBold) }
 }
 
-@Composable private fun ScanStateChip(done: Boolean) {
+@Composable
+private fun ScanStateChip(done: Boolean) {
     val text = if (done) "مكتمل" else "بانتظار المسح"
     val bg = if (done) Color(0x3310B981) else Color(0x33FBBF24)
     val fg = if (done) Color(0xFF065F46) else Color(0xFF92400E)
@@ -540,7 +555,7 @@ private fun QuotationLineCard(
    ماسح مضمّن داخل الشاشة
    ========================= */
 
- @Composable
+@Composable
 private fun InlineScannerOverlay(
     onClose: () -> Unit,
     onCodeScanned: (String) -> Unit
@@ -570,7 +585,11 @@ private fun InlineScannerOverlay(
                 Icon(Icons.Rounded.Close, contentDescription = "إغلاق", tint = Color.White)
             }
             Spacer(Modifier.width(8.dp))
-            Text("وضع المسح المتواصل", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text(
+                "وضع المسح المتواصل",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium
+            )
         }
 
         AndroidView(
@@ -587,7 +606,8 @@ private fun InlineScannerOverlay(
                 }
 
                 val barcodeScanner = BarcodeScanning.getClient()
-                val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                val textRecognizer =
+                    TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -628,7 +648,11 @@ private fun InlineScannerOverlay(
                         lifecycleOwner, cameraSelector, preview, imageAnalysis
                     )
                 } catch (e: Exception) {
-                    Toast.makeText(context, "فشل تشغيل الكاميرا: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        context,
+                        "فشل تشغيل الكاميرا: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }, ContextCompat.getMainExecutor(context))
         }
@@ -645,7 +669,10 @@ private fun InlineScannerOverlay(
                     color = Color.White,
                     topLeft = androidx.compose.ui.geometry.Offset.Zero,
                     size = size,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius, cornerRadius),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+                        cornerRadius,
+                        cornerRadius
+                    ),
                     style = Stroke(width = strokeWidth)
                 )
             }
