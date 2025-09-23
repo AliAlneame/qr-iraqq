@@ -64,14 +64,17 @@ class HomeViewModel @Inject constructor(
     private val _scannedCode = MutableStateFlow<String?>(null)
     val scannedCode: StateFlow<String?> = _scannedCode
 
-    fun fetchProducts(sku: String, warehouseId: Int) {
+    fun fetchProducts(sku: String, warehouseId: Int): List<ProductData> {
+        var list: List<ProductData> = emptyList()
         viewModelScope.launch {
             try {
-                _products.value = repo.getProducts(sku, warehouseId)
+                list = repo.getProducts(sku, warehouseId)
+                _products.value = list
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+        return list
     }
 
     fun confirmQuotation() {

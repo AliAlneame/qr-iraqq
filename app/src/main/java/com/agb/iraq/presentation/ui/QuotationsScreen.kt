@@ -117,7 +117,11 @@ fun QuotationsScreen(
 
     // البحث عن العنصر بواسطة كود ممسوح
     fun findItemByScannedCode(codeRaw: String, currentItemSku: String): QuotationItem? {
-        val updatedItem = products.find { it.sku == codeRaw }
+        val newProducts = viewModel.fetchProducts(
+            sku = codeRaw,
+            warehouseId = items.find { it.product?.sku == currentItemSku }?.warehouse_id ?: 9
+        )
+        val updatedItem = newProducts.find { it.sku == codeRaw }
         return if (updatedItem != null) {
             items = items.map { item ->
                 if (item.product?.sku == currentItemSku) {
@@ -131,6 +135,7 @@ fun QuotationsScreen(
                     item
                 }
             }
+//            updatedItem
             items.find { it.product?.sku == currentItemSku }
         } else {
             null
