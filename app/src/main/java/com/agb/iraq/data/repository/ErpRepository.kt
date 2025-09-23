@@ -12,6 +12,7 @@ import com.agb.iraq.data.remote.model.ProductData
 import com.agb.iraq.data.remote.model.ProductResponse
 import com.agb.iraq.data.remote.model.QuotationDetailResponse
 import com.agb.iraq.data.remote.model.QuotationItem
+import com.agb.iraq.data.remote.model.UpdateResponse
 import retrofit2.Response
 import javax.inject.Inject
 
@@ -55,7 +56,7 @@ class ErpRepository @Inject constructor(
         return api.confirmPurchases(quotationId,fields)
     }
 
-    override fun updateQuotation(
+    override suspend fun updateQuotation(
         quotationId: Int,
         customerId: Int,
         warehouseId: Int,

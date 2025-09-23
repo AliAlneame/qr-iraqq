@@ -4,6 +4,7 @@ import com.agb.iraq.data.remote.model.ConfirmResponse
 import com.agb.iraq.data.remote.model.PagingResponse
 import com.agb.iraq.data.remote.model.ProductResponse
 import com.agb.iraq.data.remote.model.QuotationDetailResponse
+import com.agb.iraq.data.remote.model.UpdateResponse
 import retrofit2.http.Field
 import retrofit2.http.FieldMap
 import retrofit2.http.FormUrlEncoded
@@ -50,7 +51,7 @@ interface QuotationApi {
 
     @FormUrlEncoded
     @POST("quotations/{id}/update")
-    fun updateQuotation(
+    suspend fun updateQuotation(
         @Path("id") quotationId: Int,
         @Field("customer_id") customerId: Int,
         @Field("warehouse_id") warehouseId: Int,

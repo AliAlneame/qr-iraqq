@@ -8,6 +8,14 @@ data class ConfirmResponse(
     val status: Int? = null
 )
 
+data class UpdateResponse(
+    val success: Boolean? = null,
+    val data: ConfirmData? = null,
+    val message: String? = null,
+    val code: Int? = null,
+    val status: Int? = null
+)
+
 data class ConfirmData(
     val id: Int? = null,
     val quotation_id: Int? = null,

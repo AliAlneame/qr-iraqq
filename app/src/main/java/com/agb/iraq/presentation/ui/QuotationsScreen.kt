@@ -1,12 +1,34 @@
 ﻿package com.agb.iraq.presentation.ui
 
+// CameraX + ML Kit
 import android.widget.Toast
+import androidx.annotation.OptIn
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -38,6 +60,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -48,38 +72,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.agb.iraq.data.remote.model.QuotationItem
 import com.agb.iraq.presentation.ui.viewmodel.HomeViewModel
-
-// CameraX + ML Kit
-import androidx.annotation.OptIn
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ExperimentalGetImage
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Canvas
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import java.util.ArrayList
+import kotlinx.coroutines.launch
 import java.util.regex.Pattern
 
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
@@ -88,17 +99,17 @@ fun QuotationsScreen(
     navController: NavController,
     viewModel: HomeViewModel
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-
     // تحميل بيانات عرض السعر
     LaunchedEffect(Unit) {
         viewModel.setQuotationsItems()
     }
-
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val quotationsItems by viewModel.quotationsItems.collectAsState()
-    val products by viewModel.products.collectAsState()
-    val scannedSkus by viewModel.scannedSkus.collectAsState()
     var items by remember(key1 = quotationsItems) { mutableStateOf(quotationsItems?.data?.items ?: emptyList()) }
+
+
+    val scannedSkus by viewModel.scannedSkus.collectAsState()
 
     var currentItemSku by remember { mutableStateOf("") }
 
@@ -116,10 +127,11 @@ fun QuotationsScreen(
     }
 
     // البحث عن العنصر بواسطة كود ممسوح
-    fun findItemByScannedCode(codeRaw: String, currentItemSku: String): QuotationItem? {
+    suspend fun findItemByScannedCode(codeRaw: String, currentItemSku: String): QuotationItem? {
+        val currentItem = items.find { it.product?.sku == currentItemSku }
         val newProducts = viewModel.fetchProducts(
             sku = codeRaw,
-            warehouseId = items.find { it.product?.sku == currentItemSku }?.warehouse_id ?: 9
+            warehouseId = currentItem?.warehouse_id ?: 9
         )
         val updatedItem = newProducts.find { it.sku == codeRaw }
         return if (updatedItem != null) {
@@ -135,13 +147,11 @@ fun QuotationsScreen(
                     item
                 }
             }
-//            updatedItem
-            items.find { it.product?.sku == currentItemSku }
+            currentItem
         } else {
             null
         }
     }
-//        }
 
 //        val code = codeRaw.trim()
 //        if (code.isBlank()) return null
@@ -155,17 +165,17 @@ fun QuotationsScreen(
         val handle = backStackEntry?.savedStateHandle
         val live = handle?.getLiveData<String>("scannedSku")
         val obs = Observer<String> { skuRaw ->
-            handleScannedCode(
-                code = skuRaw ?: return@Observer,
-                items = items,
-                scannedSkus = scannedSkus,
-                localCounts = localCounts,
-                findItemByScannedCode = {
-                    findItemByScannedCode(it, currentItemSku)
-                },
-                countKey = ::countKey,
-                onToast = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
-            )
+            coroutineScope.launch {
+                handleScannedCode(
+                    code = skuRaw ?: return@launch,
+                    items = items,
+                    scannedSkus = scannedSkus,
+                    localCounts = localCounts,
+                    findItemByScannedCode = { findItemByScannedCode(it, currentItemSku) },
+                    countKey = ::countKey,
+                    onToast = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+                )
+            }
         }
         live?.observeForever(obs)
         onDispose { live?.removeObserver(obs) }
@@ -287,10 +297,6 @@ fun QuotationsScreen(
                             required = required,
                             isSatisfied = isSatisfied,
                             onClick = {
-                                viewModel.fetchProducts(
-                                    item.product?.sku ?: "",
-                                    item.warehouse_id ?: 9
-                                )
                                 currentItemSku = item.product?.sku ?: ""
                                 scanning = true
                             }
@@ -303,21 +309,20 @@ fun QuotationsScreen(
                 InlineScannerOverlay(
                     onClose = { scanning = false },
                     onCodeScanned = { code ->
-                        handleScannedCode(
-                            code = code,
-                            items = items,
-                            scannedSkus = scannedSkus,
-                            localCounts = localCounts,
-                            findItemByScannedCode = {
-                                findItemByScannedCode(it, currentItemSku)
-                            },
-                            countKey = ::countKey,
-                            onToast = { msg ->
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            }
-                        )
+                        coroutineScope.launch {
+                            handleScannedCode(
+                                code = code,
+                                items = items,
+                                scannedSkus = scannedSkus,
+                                localCounts = localCounts,
+                                findItemByScannedCode = { findItemByScannedCode(it, currentItemSku) },
+                                countKey = ::countKey,
+                                onToast = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+                            )
+                        }
                     }
                 )
+
             }
         }
     }
@@ -343,12 +348,12 @@ private fun rememberCountStateMap(): SnapshotStateMap<String, Int> {
 }
 
 /** معالجة الكود الممسوح وتحديث العداد */
-private fun handleScannedCode(
+private suspend fun handleScannedCode(
     code: String,
     items: List<QuotationItem>,
     scannedSkus: Set<String>,
     localCounts: SnapshotStateMap<String, Int>,
-    findItemByScannedCode: (String) -> QuotationItem?,
+    findItemByScannedCode: suspend (String) -> QuotationItem?,
     countKey: (QuotationItem) -> String,
     onToast: (String) -> Unit
 ) {
@@ -357,6 +362,7 @@ private fun handleScannedCode(
         onToast("الرمز غير موجود في هذا العرض: $code")
         return
     }
+
     val key = countKey(item)
     val required = (item.quantity ?: 1).coerceAtLeast(1)
     val serverKey = item.product?.sku ?: item.product_id?.toString() ?: ""
@@ -373,6 +379,7 @@ private fun handleScannedCode(
     localCounts[key] = next
     onToast("تم المسح: $next / $required")
 }
+
 
 /** رأس التقدّم */
 @Composable

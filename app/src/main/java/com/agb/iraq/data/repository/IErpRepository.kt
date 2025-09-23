@@ -6,6 +6,7 @@ import com.agb.iraq.data.remote.model.ProductData
 import com.agb.iraq.data.remote.model.ProductResponse
 import com.agb.iraq.data.remote.model.QuotationDetailResponse
 import com.agb.iraq.data.remote.model.QuotationItem
+import com.agb.iraq.data.remote.model.UpdateResponse
 import retrofit2.http.Field
 import retrofit2.http.FieldMap
 import retrofit2.http.FormUrlEncoded
@@ -21,7 +22,7 @@ interface IErpRepository {
     suspend fun getPurchasesById(id: Int): QuotationDetailResponse
     suspend fun confirmQuotation(quotationId: Int, fields: Map<String, String>): ConfirmResponse
     suspend fun confirmPurchases(quotationId: Int, fields: Map<String, String>): ConfirmResponse
-    fun updateQuotation(
+    suspend fun updateQuotation(
         quotationId: Int,
         customerId: Int,
         warehouseId: Int,

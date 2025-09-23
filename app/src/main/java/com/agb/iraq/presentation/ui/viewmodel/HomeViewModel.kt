@@ -64,18 +64,30 @@ class HomeViewModel @Inject constructor(
     private val _scannedCode = MutableStateFlow<String?>(null)
     val scannedCode: StateFlow<String?> = _scannedCode
 
-    fun fetchProducts(sku: String, warehouseId: Int): List<ProductData> {
-        var list: List<ProductData> = emptyList()
-        viewModelScope.launch {
-            try {
-                list = repo.getProducts(sku, warehouseId)
-                _products.value = list
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+//    fun fetchProducts(sku: String, warehouseId: Int): List<ProductData> {
+//        var list: List<ProductData> = emptyList()
+//        viewModelScope.launch {
+//            try {
+//                list = repo.getProducts(sku, warehouseId)
+//                _products.value = list
+//            } catch (e: Exception) {
+//                e.printStackTrace()
+//            }
+//        }
+//        return list
+//    }
+
+    suspend fun fetchProducts(sku: String, warehouseId: Int): List<ProductData> {
+        return try {
+            val list = repo.getProducts(sku, warehouseId)
+            _products.value = list
+            list
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
         }
-        return list
     }
+
 
     fun confirmQuotation() {
         viewModelScope.launch {
@@ -85,7 +97,7 @@ class HomeViewModel @Inject constructor(
                     ErpType.QUOTATIONS -> {
                         val fields = quotation.data?.items?.let { buildQuotationFields(it) }
                         repo.updateQuotation(
-                            quotationId = quotation.data?.quotation_id ?: 0,
+                            quotationId = quotation.data?.id ?: 0,
                             warehouseId = quotation.data?.warehouse_id ?: 9,
                             customerId = quotation.data?.customer_id ?: 4,
                             quotationDate = quotation.data?.quotation_date ?: "",
@@ -150,6 +162,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun setQuotationsItems() {
+        _quotationsItems.value = null
         try {
             viewModelScope.launch {
                 _quotationsItems.value = when (_erpType.value) {
