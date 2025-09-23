@@ -98,7 +98,7 @@ fun QuotationsScreen(
     val quotationsItems by viewModel.quotationsItems.collectAsState()
     val products by viewModel.products.collectAsState()
     val scannedSkus by viewModel.scannedSkus.collectAsState()
-    var items by remember { mutableStateOf(quotationsItems?.data?.items ?: emptyList()) }
+    var items by remember(key1 = quotationsItems) { mutableStateOf(quotationsItems?.data?.items ?: emptyList()) }
 
     var currentItemSku by remember { mutableStateOf("") }
 
