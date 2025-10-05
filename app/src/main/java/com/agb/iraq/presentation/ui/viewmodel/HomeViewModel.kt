@@ -38,14 +38,12 @@ class HomeViewModel @Inject constructor(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     var quotations: Flow<PagingData<QuotationItem>> =
-        _erpType
-            .flatMapLatest { type ->
-                when (type) {
-                    ErpType.QUOTATIONS -> repo.getQuotationsPager().flow
-                    ErpType.PURCHASES -> repo.getPurchasesPager().flow
-                }
+        _erpType.flatMapLatest { type ->
+            when (type) {
+                ErpType.QUOTATIONS -> repo.getQuotationsPager().flow
+                ErpType.PURCHASES -> repo.getPurchasesPager().flow
             }
-            .cachedIn(viewModelScope)
+        }.cachedIn(viewModelScope)
 
     private var currentQuotationId = MutableStateFlow<Int?>(null)
 
@@ -64,19 +62,6 @@ class HomeViewModel @Inject constructor(
     private val _scannedCode = MutableStateFlow<String?>(null)
     val scannedCode: StateFlow<String?> = _scannedCode
 
-//    fun fetchProducts(sku: String, warehouseId: Int): List<ProductData> {
-//        var list: List<ProductData> = emptyList()
-//        viewModelScope.launch {
-//            try {
-//                list = repo.getProducts(sku, warehouseId)
-//                _products.value = list
-//            } catch (e: Exception) {
-//                e.printStackTrace()
-//            }
-//        }
-//        return list
-//    }
-
     suspend fun fetchProducts(sku: String, warehouseId: Int): List<ProductData> {
         return try {
             val list = repo.getProducts(sku, warehouseId)
@@ -88,32 +73,43 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-
-    fun confirmQuotation() {
+    /**
+     * نمرّر العناصر الحالية من الواجهة (currentUiItems) لأنها تحمل product_id المحدَّث.
+     * بعد النجاح: نعيد تحميل تفاصيل نفس العرض لعرض الحالة من السيرفر.
+     */
+    fun confirmQuotation(currentUiItems: List<QuotationItem>? = null) {
         viewModelScope.launch {
-            val quotation = _quotationsItems.value ?: return@launch
+            val quotation = _quotationsItems.value ?: run {
+                _confirmResult.emit("لا توجد بيانات للعرض المحدد.")
+                return@launch
+            }
+            val qId = quotation.data?.id ?: 0
+            val itemsToSend: List<QuotationItem> =
+                currentUiItems ?: (quotation.data?.items ?: emptyList())
+
             try {
                 val response = when (_erpType.value) {
                     ErpType.QUOTATIONS -> {
-                        val fields = quotation.data?.items?.let { buildQuotationFields(it) }
+                        val fields = buildQuotationFields(itemsToSend)
                         repo.updateQuotation(
-                            quotationId = quotation.data?.id ?: 0,
+                            quotationId = qId,
                             warehouseId = quotation.data?.warehouse_id ?: 9,
                             customerId = quotation.data?.customer_id ?: 4,
                             quotationDate = quotation.data?.quotation_date ?: "",
-                            items = fields ?: emptyMap()
+                            items = fields
                         )
                     }
-
                     ErpType.PURCHASES -> {
-                        val fields = quotation.data?.items?.let { buildConfirmFields(it) }
-                        repo.confirmPurchases(
-                            quotation.data?.id ?: 0,
-                            fields ?: emptyMap()
-                        )
+                        val fields = buildConfirmFields(itemsToSend)
+                        repo.confirmPurchases(qId, fields)
                     }
                 }
-                _confirmResult.emit(response.message ?: "Unknown")
+                _confirmResult.emit(response.message ?: "تم التنفيذ")
+                // تحديث التفاصيل من السيرفر لعرض النتيجة الحقيقية
+                _quotationsItems.value = when (_erpType.value) {
+                    ErpType.QUOTATIONS -> repo.getQuotationById(qId)
+                    ErpType.PURCHASES -> repo.getPurchasesById(qId)
+                }
             } catch (e: Exception) {
                 _confirmResult.emit("Error confirming: ${e.message}")
             }
@@ -143,31 +139,26 @@ class HomeViewModel @Inject constructor(
 
     private fun setQuotations() {
         viewModelScope.launch {
-            quotations = repo.getQuotationsPager()
-                .flow
-                .cachedIn(viewModelScope)
+            quotations = repo.getQuotationsPager().flow.cachedIn(viewModelScope)
         }
     }
 
     private fun setPurchases() {
         viewModelScope.launch {
-            quotations = repo.getPurchasesPager()
-                .flow
-                .cachedIn(viewModelScope)
+            quotations = repo.getPurchasesPager().flow.cachedIn(viewModelScope)
         }
     }
 
-    fun setCurrentQuotationId(id: Int) {
-        currentQuotationId.value = id
-    }
+    fun setCurrentQuotationId(id: Int) { currentQuotationId.value = id }
 
     fun setQuotationsItems() {
         _quotationsItems.value = null
         try {
             viewModelScope.launch {
+                val id = currentQuotationId.value ?: 0
                 _quotationsItems.value = when (_erpType.value) {
-                    ErpType.QUOTATIONS -> repo.getQuotationById(currentQuotationId.value ?: 0)
-                    ErpType.PURCHASES -> repo.getPurchasesById(currentQuotationId.value ?: 0)
+                    ErpType.QUOTATIONS -> repo.getQuotationById(id)
+                    ErpType.PURCHASES -> repo.getPurchasesById(id)
                 }
             }
         } catch (e: Exception) {

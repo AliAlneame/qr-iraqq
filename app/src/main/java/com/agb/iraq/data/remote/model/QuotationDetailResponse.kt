@@ -87,7 +87,7 @@ data class Product(
     val sale_price: String? = null,
     val purchase_price: String? = null,
     val quantity: Int? = null,
-    val tax_id: Int? = null,
+    val tax_id: String? = null,
     val category_id: Int? = null,
     val unit_id: Int? = null,
     val type: String? = null,
